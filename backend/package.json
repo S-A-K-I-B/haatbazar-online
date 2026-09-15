@@ -37,6 +37,6 @@
     "@types/uuid": "^9.0.8",
     "prisma": "^5.19.1",
     "tsx": "^4.16.5",
-    "typescript": "^5.5.4"
+    "typescript": "5.5.4"
   }
 }
