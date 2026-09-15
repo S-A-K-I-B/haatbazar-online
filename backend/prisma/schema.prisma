@@ -1,0 +1,133 @@
+// Prisma schema — PostgreSQL
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  hostedGames   Game[]        @relation("HostedGames")
+  gamePlayers   GamePlayer[]
+  chatMessages  ChatMessage[]
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum GameStatus {
+  LOBBY
+  PLAYING
+  ENDED
+}
+
+model Game {
+  id         String     @id @default(uuid())
+  roomCode   String     @unique
+  hostUserId String
+  status     GameStatus @default(LOBBY)
+  mode       String     @default("standard") // standard | quick
+  maxRounds  Int        @default(15)
+  // Full authoritative snapshot of GameState (see backend/src/game/types.ts)
+  // persisted after every mutation so a server restart / reconnect can resume.
+  state      Json
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  host    User          @relation("HostedGames", fields: [hostUserId], references: [id])
+  players GamePlayer[]
+  events  GameEvent[]
+  trades  Trade[]
+  chat    ChatMessage[]
+
+  @@index([roomCode])
+}
+
+model GamePlayer {
+  id        String   @id @default(uuid())
+  gameId    String
+  userId    String
+  slot      Int // 0..3 — exactly one seat per user per game, enforced below
+  name      String
+  tokenId   String
+  ready     Boolean  @default(false)
+  connected Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([gameId, userId]) // one user can only occupy one slot in a game
+  @@unique([gameId, slot]) // one slot can only be occupied by one user
+  @@index([gameId])
+}
+
+model GameEvent {
+  id        String   @id @default(uuid())
+  gameId    String
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId, createdAt])
+}
+
+enum TradeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+model Trade {
+  id         String      @id @default(uuid())
+  gameId     String
+  fromUserId String
+  toUserId   String
+  payload    Json // { fromProps: string[], toProps: string[], fromCash: number, toCash: number }
+  status     TradeStatus @default(PENDING)
+  createdAt  DateTime    @default(now())
+  resolvedAt DateTime?
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  gameId    String
+  userId    String
+  message   String
+  createdAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([gameId, createdAt])
+}
